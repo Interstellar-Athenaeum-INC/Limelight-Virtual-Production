@@ -9,21 +9,34 @@
 #include <FastLED.h>
 #include "FastLED_RGBW.h"
 
+#define DATA_PIN D1
+
 // WIFI Config
 const char* ssid = "Galaxy";
 const char* password = "andromeda304";
 
 // LED Fixture Setup
-const int numLEDs = 4;
-const int numberOfChannels = numLEDs * 3; // Number of DMX channels (R, G, B = 3)
+const int numLEDs = 4; // Defines the number of LEDs on the light strip
+
+/* - Custom Mode - 
+ * Useful when you want to set the fixture mode using a custom master channel
+ * in Limelight. Enabling this mode will set the mode using the first two bytes
+ * received by ArtNet.
+ */
+const bool customMode = false;
+
+/* - ArtNet Universe -
+ *  Define the universe this fixture receives data on (0-15)
+ */
+uint8_t universe = 5;
 
 // FastLED RGB
 CRGBW leds[numLEDs];
 CRGB * ledsRGB = (CRGB *) &leds[0];
 
+
 // ARTNET
 ArtnetWiFiReceiver artnet;
-uint8_t universe = 5;  // 0 - 15
 
 struct ArtPollReplyMetadata
 {
@@ -82,7 +95,7 @@ bool connectWiFi(void)
 void setup() {
 
   enum FixtureMode {
-    NONE, ALPHA, TEMP
+    NONE, ALPHA, TEMP, FILL
   };
 
   Serial.begin(115200);
@@ -102,45 +115,69 @@ void setup() {
   artnetConfig.node_report = artnetConfigMeta.node_report;
   artnet.setArtPollReplyConfig(artnetConfig);
 
-  FastLED.addLeds<WS2812B, D1, EOrder::RGB>(ledsRGB, getRGBWsize(numLEDs));
+  FastLED.addLeds<WS2812B, DATA_PIN, EOrder::RGB>(ledsRGB, getRGBWsize(numLEDs));
 
   // Execute DMX frame on packet receive
   artnet.subscribeArtDmxUniverse(universe, [](const uint8_t *data, uint16_t size, const ArtDmxMetadata& metadata, const ArtNetRemoteInfo& remote)
   {
-    // Brightness
-    if(universe == 15) {
-      FastLED.setBrightness(data[0]);
-    }
+    // Clear
+    FastLED.clear();
 
     // Read Universe and put into display buffer
-    for (int i = 0; i < numLEDs; i++)
+    uint8_t dataPacketSize = customMode ? (size - 2) : size; // Size of LED specific data
+    uint8_t ledPacketSize = (dataPacketSize % 5 == 0) ? 5 : 3;
+    uint8_t ledsInPacket = dataPacketSize / ledPacketSize;
+    if(ledsInPacket == 0) { return; } // Check if LED data exists
+
+    // Define Mode
+    uint8_t ledPacketStartIndex = 0;
+    uint8_t Alpha = 0;
+    uint8_t Mode = 0;
+    if(customMode) { // Custom mode
+        Alpha = data[0]; // Value
+        Mode = data[1]; // Mode
+        ledPacketStartIndex += 2;
+    }
+
+    // Define number of LEDs to fill
+    uint8_t fillLeds = ((Mode == FILL) ? Alpha : 1);
+
+    // For each LED data packet
+    int pixIndex = 0;
+    for (int i = 0; i < ledsInPacket; i++)
     {
-      size_t idx = i * ((size % 5 == 0) ? 5 : 3); 
-      uint8_t R = 0;
-      uint8_t G = 0;
-      uint8_t B = 0;
 
-      if(idx < size) {R = data[idx+0];} else {R = 0;}
-      if((idx + 1) < size) {G = data[idx+1];} else {G = 0;}
-      if((idx + 2) < size) {B = data[idx+2];} else {B = 0;}
+      // Obtain data
+      size_t idx = (i * ledPacketSize) + ledPacketStartIndex; 
+      uint8_t R = (idx < size) ? data[idx] : 0;
+      uint8_t G = ((idx + 1) < size) ? data[idx+1] : 0;
+      uint8_t B = ((idx + 2) < size) ? data[idx+2] : 0;
 
-      // Mode Enabled
-      if(size % 5 == 0) {
-        uint8_t Alpha = data[idx+3]; // Value
-        uint8_t Mode = data[idx+4]; // Mode
-
-        if(Mode == ALPHA) { // Alpha Mode
-          uint8_t AlphaInv = 255 - Alpha;
-          leds[i] = CRGB(R - AlphaInv, G - AlphaInv, B - AlphaInv);
-          continue;
-
-        } else if(Mode == TEMP) { // Temperature Mode
-          leds[i] = CRGBW(0, 0, 0, Alpha);
-          continue;
-        }
+      // Mode in LED Packet
+      if(dataPacketSize % 5 == 0) {
+        Alpha = data[idx+3]; // Value
+        Mode = data[idx+4]; // Mode
       }
 
-      leds[i] = CRGBW(R, G, B, 0);
+      // Fill if enabled
+      for (int j = 0; j < fillLeds; j++) {
+
+        // Max Pixel Reached
+        if(pixIndex >= numLEDs) {return;}
+
+        // Mode
+        if(Mode == ALPHA) { // Alpha Mode
+          nscale8x3(R,G,B,Alpha);
+
+        } else if(Mode == TEMP) { // Temperature Mode
+          leds[pixIndex] = CRGBW(0, 0, 0, Alpha);
+          pixIndex++;
+          continue;
+        }
+
+        leds[pixIndex] = CRGBW(R, G, B, 0);
+        pixIndex++;
+      }
     }
   });
 }
