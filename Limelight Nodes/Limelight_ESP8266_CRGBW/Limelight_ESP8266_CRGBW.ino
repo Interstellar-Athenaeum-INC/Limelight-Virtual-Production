@@ -2,6 +2,31 @@
 // --
 // ESP8266 Artnet Node with FastLED
 // Intended to be used with the Limelight plugin for Unreal Engine
+//
+// Script preset for SK6812 LED strips
+/*
+  MIT License
+
+  Copyright (c) 2025 Interstellar Athenaeum INC.
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+*/
 
 #include <ArtnetWiFi.h>
 #include <ESP8266WiFi.h>
@@ -9,14 +34,21 @@
 #include <FastLED.h>
 #include "FastLED_RGBW.h"
 
+// Hardware Setup
+#define CHIPSET WS2812B // Leave as WS2812B for SK6812
 #define DATA_PIN D1
+#define ORDER EOrder::RGB
 
 // WIFI Config
-const char* ssid = "Galaxy";
-const char* password = "andromeda304";
+const char* ssid = "NAME";
+const char* password = "PASSWORD";
+const IPAddress ip(192, 0, 0, 1);
+const IPAddress gateway(192, 168, 1, 1);
+const IPAddress subnet(255, 255, 255, 0);
 
 // LED Fixture Setup
-const int numLEDs = 4; // Defines the number of LEDs on the light strip
+const int numLEDs = 6; // Defines the number of LEDs on the light strip
+const int ledPacketSize = 3; // Defines the number of channels in a light packet (R, G, B)
 
 /* - Custom Mode - 
  * Useful when you want to set the fixture mode using a custom master channel
@@ -28,12 +60,11 @@ const bool customMode = false;
 /* - ArtNet Universe -
  *  Define the universe this fixture receives data on (0-15)
  */
-uint8_t universe = 5;
+uint8_t universe = 0;
 
 // FastLED RGB
 CRGBW leds[numLEDs];
 CRGB * ledsRGB = (CRGB *) &leds[0];
-
 
 // ARTNET
 ArtnetWiFiReceiver artnet;
@@ -67,13 +98,31 @@ bool connectWiFi(void)
   bool state = true;
   int i = 0;
   WiFi.begin(ssid, password);
+  WiFi.config(ip, gateway, subnet);
+
   Serial.println("");
   Serial.println("Connecting");
   while(WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
+
+    // WiFi Status Indicator
+    FastLED.clear();
+    leds[(i % numLEDs)] = CRGB(0,150,0);
+    FastLED.show();
+
     if(i > 50) {
       state = false;
+
+      // Error
+      FastLED.showColor(CRGB(150,0,0));
+      delay(50);
+      FastLED.showColor(CRGB(0,0,0));
+      delay(50);
+      FastLED.showColor(CRGB(150,0,0));
+      delay(50);
+      FastLED.showColor(CRGB(0,0,0));
+
       break; // TIMEOUT
     }
     i++;
@@ -94,12 +143,26 @@ bool connectWiFi(void)
 
 void setup() {
 
+  delay(2000); // Safety Startup Delay
+
   enum FixtureMode {
     NONE, ALPHA, TEMP, FILL
   };
 
+  FastLED.addLeds<CHIPSET, DATA_PIN, ORDER>(ledsRGB, getRGBWsize(numLEDs));
+  FastLED.clear();
+  FastLED.show();
+
   Serial.begin(115200);
-  connectWiFi();
+  if(connectWiFi()) {
+      FastLED.showColor(CRGB(0,150,0));
+      delay(50);
+      FastLED.showColor(CRGB(0,0,0));
+      delay(50);
+      FastLED.showColor(CRGB(0,150,0));
+      delay(50);
+      FastLED.showColor(CRGB(0,0,0));
+  }
 
   artnet.begin();
 
@@ -115,22 +178,16 @@ void setup() {
   artnetConfig.node_report = artnetConfigMeta.node_report;
   artnet.setArtPollReplyConfig(artnetConfig);
 
-  FastLED.addLeds<WS2812B, DATA_PIN, EOrder::RGB>(ledsRGB, getRGBWsize(numLEDs));
-
   // Execute DMX frame on packet receive
   artnet.subscribeArtDmxUniverse(universe, [](const uint8_t *data, uint16_t size, const ArtDmxMetadata& metadata, const ArtNetRemoteInfo& remote)
   {
-    // Clear
-    FastLED.clear();
-
     // Read Universe and put into display buffer
-    uint8_t dataPacketSize = customMode ? (size - 2) : size; // Size of LED specific data
-    uint8_t ledPacketSize = (dataPacketSize % 5 == 0) ? 5 : 3;
-    uint8_t ledsInPacket = dataPacketSize / ledPacketSize;
+    uint16_t dataPacketSize = customMode ? (size - 2) : size; // Size of LED specific data
+    uint16_t ledsInPacket = dataPacketSize / ledPacketSize;
     if(ledsInPacket == 0) { return; } // Check if LED data exists
 
     // Define Mode
-    uint8_t ledPacketStartIndex = 0;
+    uint16_t ledPacketStartIndex = 0;
     uint8_t Alpha = 0;
     uint8_t Mode = 0;
     if(customMode) { // Custom mode
@@ -153,12 +210,6 @@ void setup() {
       uint8_t G = ((idx + 1) < size) ? data[idx+1] : 0;
       uint8_t B = ((idx + 2) < size) ? data[idx+2] : 0;
 
-      // Mode in LED Packet
-      if(dataPacketSize % 5 == 0) {
-        Alpha = data[idx+3]; // Value
-        Mode = data[idx+4]; // Mode
-      }
-
       // Fill if enabled
       for (int j = 0; j < fillLeds; j++) {
 
@@ -175,14 +226,15 @@ void setup() {
           continue;
         }
 
-        leds[pixIndex] = CRGBW(R, G, B, 0);
+        leds[pixIndex] = CRGBW(R, G, B);
         pixIndex++;
       }
     }
+
+    FastLED.show(); // Display buffer
   });
 }
 
 void loop() {
   artnet.parse();
-  FastLED.show(); // Display buffer
 }

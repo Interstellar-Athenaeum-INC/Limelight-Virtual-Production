@@ -1,9 +1,9 @@
 // LIMELIGHT ESP Node
 // --
-// ESP32 Artnet Node with FastLED
+// ESP8266 Artnet Node with FastLED
 // Intended to be used with the Limelight plugin for Unreal Engine
 //
-// Script preset for SK6812 LED strips
+// Script preset for WS2812B LED strips
 /*
   MIT License
 
@@ -29,14 +29,13 @@
 */
 
 #include <ArtnetWiFi.h>
-#include <WiFi.h>
+#include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
 #include <FastLED.h>
-#include "FastLED_RGBW.h"
 
 // Hardware Setup
-#define CHIPSET WS2812B // Leave as WS2812B for SK6812
-#define DATA_PIN 4
+#define CHIPSET WS2812B
+#define DATA_PIN D1
 #define ORDER EOrder::RGB
 
 // WIFI Config
@@ -63,8 +62,7 @@ const bool customMode = false;
 uint8_t universe = 0;
 
 // FastLED RGB
-CRGBW leds[numLEDs];
-CRGB * ledsRGB = (CRGB *) &leds[0];
+CRGB leds[numLEDs];
 
 // ARTNET
 ArtnetWiFiReceiver artnet;
@@ -143,13 +141,13 @@ bool connectWiFi(void)
 
 void setup() {
 
-  delay(2000); // Safety Startup Delay
+  delay(2000);
 
   enum FixtureMode {
-    NONE, ALPHA, TEMP, FILL
+    NONE, ALPHA, FILL
   };
 
-  FastLED.addLeds<CHIPSET, DATA_PIN, ORDER>(ledsRGB, getRGBWsize(numLEDs));
+  FastLED.addLeds<CHIPSET, DATA_PIN, ORDER>(leds, numLEDs);
   FastLED.clear();
   FastLED.show();
 
@@ -219,14 +217,9 @@ void setup() {
         // Mode
         if(Mode == ALPHA) { // Alpha Mode
           nscale8x3(R,G,B,Alpha);
-
-        } else if(Mode == TEMP) { // Temperature Mode
-          leds[pixIndex] = CRGBW(0, 0, 0, Alpha);
-          pixIndex++;
-          continue;
         }
 
-        leds[pixIndex] = CRGBW(R, G, B);
+        leds[pixIndex] = CRGB(R, G, B);
         pixIndex++;
       }
     }
