@@ -226,7 +226,7 @@ void setup() {
           continue;
         }
 
-        leds[pixIndex] = CRGBW(R, G, B);
+        leds[pixIndex] = CRGBW(R, G, B, 0);
         pixIndex++;
       }
     }
