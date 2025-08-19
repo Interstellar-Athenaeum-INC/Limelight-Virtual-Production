@@ -115,13 +115,17 @@ bool connectWiFi(void)
       state = false;
 
       // Error
-      FastLED.showColor(CRGB(150,0,0));
+      for(int j = 0; j < numLEDs; j++) leds[j] = CRGBW(150,0,0,0);
+      FastLED.show();
       delay(50);
-      FastLED.showColor(CRGB(0,0,0));
+      for(int j = 0; j < numLEDs; j++) leds[j] = CRGBW(0,0,0,0);
+      FastLED.show();
       delay(50);
-      FastLED.showColor(CRGB(150,0,0));
+      for(int j = 0; j < numLEDs; j++) leds[j] = CRGBW(150,0,0,0);
+      FastLED.show();
       delay(50);
-      FastLED.showColor(CRGB(0,0,0));
+      for(int j = 0; j < numLEDs; j++) leds[j] = CRGBW(0,0,0,0);
+      FastLED.show();
 
       break; // TIMEOUT
     }
@@ -155,13 +159,17 @@ void setup() {
 
   Serial.begin(115200);
   if(connectWiFi()) {
-      FastLED.showColor(CRGB(0,150,0));
+      for(int j = 0; j < numLEDs; j++) leds[j] = CRGBW(0,150,0,0);
+      FastLED.show();
       delay(50);
-      FastLED.showColor(CRGB(0,0,0));
+      for(int j = 0; j < numLEDs; j++) leds[j] = CRGBW(0,0,0,0);
+      FastLED.show();
       delay(50);
-      FastLED.showColor(CRGB(0,150,0));
+      for(int j = 0; j < numLEDs; j++) leds[j] = CRGBW(0,150,0,0);
+      FastLED.show();
       delay(50);
-      FastLED.showColor(CRGB(0,0,0));
+      for(int j = 0; j < numLEDs; j++) leds[j] = CRGBW(0,0,0,0);
+      FastLED.show();
   }
 
   artnet.begin();
